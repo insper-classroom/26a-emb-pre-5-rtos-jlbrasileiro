@@ -7,8 +7,8 @@
 #include <FreeRTOS.h>
 #include <task.h>
 #include <semphr.h>
+#include <queue.h>
 
-#include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 
@@ -20,10 +20,12 @@
 
 #define BLINK_DELAY_MS 100
 
-SemaphoreHandle_t xSemaphoreBtnR;
-SemaphoreHandle_t xSemaphoreBtnY;
+QueueHandle_t xQueueBtn;
+SemaphoreHandle_t xSemaphoreLedR;
+SemaphoreHandle_t xSemaphoreLedY;
 
 void btn_callback(uint gpio, uint32_t events) {
+    int btn_id = 0;
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
     if ((events & GPIO_IRQ_EDGE_FALL) == 0) {
@@ -31,14 +33,31 @@ void btn_callback(uint gpio, uint32_t events) {
     }
 
     if (gpio == BTN_PIN_R) {
-        xSemaphoreGiveFromISR(xSemaphoreBtnR, &xHigherPriorityTaskWoken);
+        btn_id = BTN_PIN_R;
+        xQueueSendFromISR(xQueueBtn, &btn_id, &xHigherPriorityTaskWoken);
     }
 
     if (gpio == BTN_PIN_Y) {
-        xSemaphoreGiveFromISR(xSemaphoreBtnY, &xHigherPriorityTaskWoken);
+        btn_id = BTN_PIN_Y;
+        xQueueSendFromISR(xQueueBtn, &btn_id, &xHigherPriorityTaskWoken);
     }
 
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void btn_task(void *p) {
+    int btn_id = 0;
+
+    while (true) {
+        if (xQueueReceive(xQueueBtn, &btn_id, portMAX_DELAY) == pdTRUE) {
+            if (btn_id == BTN_PIN_R) {
+                xSemaphoreGive(xSemaphoreLedR);
+            }
+            if (btn_id == BTN_PIN_Y) {
+                xSemaphoreGive(xSemaphoreLedY);
+            }
+        }
+    }
 }
 
 void led_r_task(void *p) {
@@ -50,7 +69,7 @@ void led_r_task(void *p) {
     gpio_put(LED_PIN_R, 0);
 
     while (true) {
-        if (xSemaphoreTake(xSemaphoreBtnR, 0) == pdTRUE) {
+        if (xSemaphoreTake(xSemaphoreLedR, 0) == pdTRUE) {
             is_blinking = !is_blinking;
             if (!is_blinking) {
                 led_state = false;
@@ -77,7 +96,7 @@ void led_y_task(void *p) {
     gpio_put(LED_PIN_Y, 0);
 
     while (true) {
-        if (xSemaphoreTake(xSemaphoreBtnY, 0) == pdTRUE) {
+        if (xSemaphoreTake(xSemaphoreLedY, 0) == pdTRUE) {
             is_blinking = !is_blinking;
             if (!is_blinking) {
                 led_state = false;
@@ -98,8 +117,9 @@ void led_y_task(void *p) {
 int main() {
     stdio_init_all();
 
-    xSemaphoreBtnR = xSemaphoreCreateBinary();
-    xSemaphoreBtnY = xSemaphoreCreateBinary();
+    xQueueBtn = xQueueCreate(16, sizeof(int));
+    xSemaphoreLedR = xSemaphoreCreateBinary();
+    xSemaphoreLedY = xSemaphoreCreateBinary();
 
     gpio_init(BTN_PIN_R);
     gpio_set_dir(BTN_PIN_R, GPIO_IN);
@@ -113,6 +133,7 @@ int main() {
                                        &btn_callback);
     gpio_set_irq_enabled(BTN_PIN_Y, GPIO_IRQ_EDGE_FALL, true);
 
+    xTaskCreate(btn_task, "BTN_Task", 256, NULL, 1, NULL);
     xTaskCreate(led_r_task, "LED_R_Task", 256, NULL, 1, NULL);
     xTaskCreate(led_y_task, "LED_Y_Task", 256, NULL, 1, NULL);
 
