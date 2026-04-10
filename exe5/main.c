@@ -25,7 +25,6 @@ SemaphoreHandle_t xSemaphoreLedR;
 SemaphoreHandle_t xSemaphoreLedY;
 
 void btn_callback(uint gpio, uint32_t events) {
-    int btn_id = 0;
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
     if ((events & GPIO_IRQ_EDGE_FALL) == 0) {
@@ -33,12 +32,12 @@ void btn_callback(uint gpio, uint32_t events) {
     }
 
     if (gpio == BTN_PIN_R) {
-        btn_id = BTN_PIN_R;
+        int btn_id = BTN_PIN_R;
         xQueueSendFromISR(xQueueBtn, &btn_id, &xHigherPriorityTaskWoken);
     }
 
     if (gpio == BTN_PIN_Y) {
-        btn_id = BTN_PIN_Y;
+        int btn_id = BTN_PIN_Y;
         xQueueSendFromISR(xQueueBtn, &btn_id, &xHigherPriorityTaskWoken);
     }
 
@@ -46,7 +45,7 @@ void btn_callback(uint gpio, uint32_t events) {
 }
 
 void btn_task(void *p) {
-    int btn_id = 0;
+    int btn_id;
 
     while (true) {
         if (xQueueReceive(xQueueBtn, &btn_id, portMAX_DELAY) == pdTRUE) {
